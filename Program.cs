@@ -29,7 +29,7 @@ internal class Program
 
         if (!missingUsers)
         {
-            Console.WriteLine("All users are already in Jellyfin, nothing to do\n");
+            Console.WriteLine("All users are already in Jellyfin, continuing...\n");
         }
         else
         {
@@ -66,11 +66,19 @@ internal class Program
             }
         }
 
+        Console.WriteLine("===== Updating Local Jellyfin Library =====");
+        await jellyfin.UpdateLocalLibrary();
+
 
         Console.WriteLine("===== Adding Sync Watched Status to Jellyfin =====");
         foreach (var jellyfinUser in jellyfinUsers)
         {
             var user = embyUsers.Find(x => x.Name.ToLower().Replace(" ", "") == jellyfinUser.Name.ToLower().Replace(" ", ""));
+            if(user == null)
+            {
+                Console.WriteLine($"User {jellyfinUser.Name} not found in Emby, skipping\n");
+                continue;
+            }
             Console.WriteLine($"Sync watched status for User: {jellyfinUser.Name}?");
             Console.WriteLine($"Press Y to sync {user.Watched.Items.Count} watched items, any other key to skip");
             var key = Console.ReadKey();
@@ -100,7 +108,7 @@ internal class Program
             }
             Console.WriteLine();
 
-            await jellyfin.UpdateUserLibrary(jellyfinUser);
+            //await jellyfin.UpdateUserLibrary(jellyfinUser);
 
             Console.WriteLine($"Finding Jellyfin IDs for {jellyfinUser.Name}");
             progress = 0;

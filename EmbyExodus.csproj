@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <None Update="settings.ini">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="settings_sample.ini">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
