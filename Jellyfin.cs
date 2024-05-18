@@ -1,25 +1,43 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
+using EmbyExodus.Interfaces;
 
 namespace EmbyExodus
 {
-    public class Jellyfin
+    public class Jellyfin : IMediaServer
     {
         public string UrlBase { get; set; }
         public string ApiKey { get; set; }
-        private List<JellyfinUser> _users = new List<JellyfinUser>();
-        private JellyfinLibrary _library = new JellyfinLibrary();
+        public MediaServerType ServerType => MediaServerType.Jellyfin;
+        public List<MediaUser> Users => _users;
+        public MediaLibrary Library => _library;
+
+        private List<MediaUser> _users = new List<MediaUser>();
+        private MediaLibrary _library = new MediaLibrary();
+
         private HttpClient _client = new HttpClient();
 
         public Jellyfin(string urlBase, string apiKey)
         {
             UrlBase = urlBase;
             ApiKey = apiKey;
-            _library.Items = new List<JellyfinItem>();
+            _library.Items = new List<MediaItem>();
             _client.DefaultRequestHeaders.Add("Authorization", ApiKey);
+            GetLibrary().Wait();
         }
+
+        async Task GetLibrary()
+        {
+            Console.WriteLine("Getting library from Jellyfin");
+            Console.WriteLine("Creating a temporary user to get the library from Jellyfin");
+            var user = await CreateUser("embyexodustemp7868", "");
+            await UpdateUserWatched(user, _library);
+            Console.WriteLine("Deleting temporary user");
+            await DeleteUser(user);
+        }
+
         //Get all users from Jellyfin
-        public async Task<List<JellyfinUser>?> GetJellyfinUsers()
+        public async Task<List<MediaUser>?> GetUsers()
         {
             if (_users.Count > 0)
             {
@@ -29,7 +47,7 @@ namespace EmbyExodus
             var url = $"{UrlBase}Users?api_key={ApiKey}";
             var response = await _client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
-            _users = JsonSerializer.Deserialize<List<JellyfinUser>>(json);
+            _users = JsonSerializer.Deserialize<List<MediaUser>>(json);
             Console.WriteLine($"Got {_users.Count} users from Jellyfin");
             StringBuilder stringBuilder = new StringBuilder();
             int progress = 0;
@@ -47,16 +65,16 @@ namespace EmbyExodus
         }
 
         //Get each user's watched status from Jellyfin
-        public async Task GetJellyfinWatched(JellyfinUser user)
+        public async Task<MediaLibrary> GetWatched(MediaUser user)
         {
             var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=true&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Fields=ProviderIds";
             var response = await _client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
-            user.Library = JsonSerializer.Deserialize<JellyfinLibrary>(json).Items;
+            return JsonSerializer.Deserialize<MediaLibrary>(json);
         }
 
         //Create Jellyfin users, prompt the user for password to set for the new user
-        public async Task<JellyfinUser> AddJellyFinUser(string user, string password)
+        public async Task<MediaUser> CreateUser(string user, string password)
         {
 
             var url = $"{UrlBase}Users/New?api_key={ApiKey}";
@@ -70,98 +88,74 @@ namespace EmbyExodus
             }
             else
             {
-                var createdUser = JsonSerializer.Deserialize<JellyfinUser>(json);
+                var createdUser = JsonSerializer.Deserialize<MediaUser>(json);
                 Console.WriteLine($"Created user: {createdUser.Name}, ID: {createdUser.Id}");
+                //add the user to the list of users
+                _users.Add(createdUser);
                 return createdUser;
             }
 
         }
 
-
-        public async Task<EmbyItem?> GetJellyfinItem(EmbyUser user, string itemId)
+        //Delete a user from Jellyfin
+        public async Task DeleteUser(MediaUser user)
         {
-            var url = $"{UrlBase}/Users/{user.Id}/Items/{itemId}?api_key={ApiKey}&Recursive=True&Fields=ProviderIds&IncludeItemTypes=Episode,Movie";
-            var response = await _client.GetAsync(url);
-            var json = await response.Content.ReadAsStringAsync();
-            var item = JsonSerializer.Deserialize<EmbyItem>(json);
-            return item;
-        }
-
-        //Library Response Cache
-        List<JellyfinLibrary> libraryCache = new List<JellyfinLibrary>();
-
-        public async Task UpdateUserLibrary(JellyfinUser user)
-        {
-
-            var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=True&Fields=ProviderIds&IncludeItemTypes=Episode,Movie";
-            var response = await _client.GetAsync(url);
-            var json = await response.Content.ReadAsStringAsync();
-            var _lib = JsonSerializer.Deserialize<JellyfinLibrary>(json);
-            //check if _lib is in the cache and add it if it isn't
-            if (!libraryCache.Any(x => x.Items == _lib.Items))
+            var url = $"{UrlBase}Users/{user.Id}?api_key={ApiKey}";
+            var response = await _client.DeleteAsync(url);
+            if (!response.IsSuccessStatusCode)
             {
-                libraryCache.Add(_lib);
-                if (_library.Items.Count == 0)
-                {
-                    _library.Items = _lib.Items;
-                }
-                else
-                {
-                    if (_library.Items != _lib.Items)
-                    {
-                        Console.WriteLine("Library items mismatch, updating");
-                        int progress = 0;
-                        //add all items to the library if they don't already exist
-                        int itemsAdded = 0;
-                        foreach (var item in _lib.Items)
-                        {
-                            progress++;
-                            Console.Write($"Updating library {progress}/{_lib.Items.Count}\r");
-                            if (!_library.Items.Any(x => x.Id == item.Id))
-                            {
-                                _library.Items.Add(item);
-                                itemsAdded++;
-                            }
-                        }
-                        Console.WriteLine($"Added {itemsAdded} items to the library");
-                        Console.WriteLine($"Library updated with {_library.Items.Count} items");
-                    }
-                }
+                var json = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"Failed to delete user: {json}");
+                throw new Exception($"Failed to delete user: {json}");
             }
             else
             {
-                Console.WriteLine("Library already in cache");
+                Console.WriteLine($"Deleted user: {user.Name}");
+                _users.Remove(user);
             }
-
-            user.Library = _library.Items;
         }
 
-        public async Task UpdateLocalLibrary()
+        public async Task<MediaUser> UpdateUserWatched(MediaUser user, MediaLibrary _library)
         {
+            var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=True&Fields=ProviderIds&IncludeItemTypes=Episode,Movie";
+            var response = await _client.GetAsync(url);
+            var json = await response.Content.ReadAsStringAsync();
+            var _lib = JsonSerializer.Deserialize<MediaLibrary>(json);
+
             int progress = 0;
-            foreach (var user in _users)
+            //add all items to the library if they don't already exist
+            int itemsAdded = 0;
+            foreach (var item in _lib.Items)
             {
                 progress++;
-                Console.Write($"Updating library {progress}/{_users.Count}\r");
-                await UpdateUserLibrary(user);
+                Console.Write($"Processing library {progress}/{_lib.Items.Count}\r");
+                if (!_library.Items.Any(x => x.Id == item.Id))
+                {
+                    _library.Items.Add(item);
+                    itemsAdded++;
+                }
             }
-            Console.WriteLine($"Updated {_library.Items.Count} items in the library");
+            Console.WriteLine($"Added {itemsAdded} items to the library");
+            Console.WriteLine($"Library updated with {_library.Items.Count} items");
+
+            user.Library = _library.Items;
+            return user;
         }
 
-        public async Task UpdateWatchedStatus(JellyfinUser user, Dictionary<string, List<MediaSyncItem>> mediaSyncItems)
+        public async Task UpdateWatchedStatus(MediaUser user, Dictionary<string, List<MediaSyncItem>> mediaSyncItems)
         {
             int progress = 0;
             Console.WriteLine();
             foreach (MediaSyncItem media in mediaSyncItems[user.Name])
             {
                 progress++;
-                if (media.JellyfinId != null)
+                if (media.Server2Id != null)
                 {
-                    string apiUrl = $"{UrlBase}Users/{user.Id}/PlayedItems/{media.JellyfinId}?api_key={ApiKey}";
+                    string apiUrl = $"{UrlBase}Users/{user.Id}/PlayedItems/{media.Server2Id}?api_key={ApiKey}";
                     HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
                     request.Headers.Add("accept", "application/json");
                     request.Headers.Add("api_key", ApiKey);
-                    request.Content = new StringContent(JsonSerializer.Serialize(new { Name = media.Name, Id = media.JellyfinId, Played = 1 }), Encoding.UTF8, "application/json");
+                    request.Content = new StringContent(JsonSerializer.Serialize(new { Name = media.Name, Id = media.Server2Id, Played = 1 }), Encoding.UTF8, "application/json");
 
                     HttpResponseMessage response = await _client.SendAsync(request);
                     response.EnsureSuccessStatusCode();
@@ -172,28 +166,8 @@ namespace EmbyExodus
                 }
                 Console.Write($"Updating items {progress}/{mediaSyncItems[user.Name].Count}\r");
             }
-
-
+            Console.WriteLine();
+            Console.WriteLine($"Updated {progress} items for {user.Name}");
         }
     }
-}
-
-public class JellyfinUser
-{
-    public string Name { get; set; }
-    public string Id { get; set; }
-    public List<JellyfinItem> Library { get; set; }
-}
-
-public class JellyfinItem
-{
-    public string Name { get; set; }
-    public string Id { get; set; }
-    public string Type { get; set; }
-    public Dictionary<string, string> ProviderIds { get; set; }
-}
-
-public class JellyfinLibrary
-{
-    public List<JellyfinItem> Items { get; set; }
 }

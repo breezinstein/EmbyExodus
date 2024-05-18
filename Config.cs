@@ -1,19 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace EmbyExodus
 {
+    public enum MediaServerType { Emby, Jellyfin }
     public class Config
     {
-        public string embyUrlBase { get; set; }
-        public string embyApiKey { get; set; }
-
-        public string jellyfinUrlBase { get; set; }
-        public string jellyfinApiKey { get; set; }
-
+        public ServerConfig server1;
+        public ServerConfig server2;
         //Constructor that loads config from an ini file
         public Config(string path)
         {
@@ -29,32 +20,52 @@ namespace EmbyExodus
                 var value = parts[1];
                 switch (key)
                 {
-                    case "embyUrlBase":
-                        embyUrlBase = value;
+                    case "server1UrlBase":
+                        server1.UrlBase = value;
                         break;
-                    case "embyApiKey":
-                        embyApiKey = value;
+                    case "server1ApiKey":
+                        server1.ApiKey = value;
                         break;
-                    case "jellyfinUrlBase":
-                        jellyfinUrlBase = value;
+                    case "server1Type":
+                        if (value == "emby")
+                        {
+                            server1.Type = MediaServerType.Emby;
+                        }
+                        else if (value == "jellyfin")
+                        {
+                            server1.Type = MediaServerType.Jellyfin;
+                        }
                         break;
-                    case "jellyfinApiKey":
-                        jellyfinApiKey = value;
+                    case "server2UrlBase":
+                        server2.UrlBase = value;
+                        break;
+                    case "server2ApiKey":
+                        server2.ApiKey = value;
+                        break;
+                    case "server2Type":
+                        if (value == "emby")
+                        {
+                            server2.Type = MediaServerType.Emby;
+                        }
+                        else if (value == "jellyfin")
+                        {
+                            server2.Type = MediaServerType.Jellyfin;
+                        }
                         break;
                 }
             }
+            //validate config
+            if (server1.UrlBase == null || server1.ApiKey == null || server2.UrlBase == null || server2.ApiKey == null)
+            {
+                throw new Exception("Invalid config file");
+            }
         }
-
-        //Constructor that loads config from input
-        public Config(string embyUrlBase, string embyApiKey, string jellyfinUrlBase, string jellyfinApiKey)
-        {
-            this.embyUrlBase = embyUrlBase;
-            this.embyApiKey = embyApiKey;
-            this.jellyfinUrlBase = jellyfinUrlBase;
-            this.jellyfinApiKey = jellyfinApiKey;
-        }
-
-
     }
 
+    public struct ServerConfig
+    {
+        public string UrlBase { get; set; }
+        public string ApiKey { get; set; }
+        public MediaServerType Type { get; set; }
+    }
 }

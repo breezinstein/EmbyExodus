@@ -1,76 +1,150 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
-
+using EmbyExodus.Interfaces;
 namespace EmbyExodus
 {
-    public class Emby
+    public class Emby : IMediaServer
     {
         public string UrlBase { get; set; }
         public string ApiKey { get; set; }
+        public MediaServerType ServerType => MediaServerType.Emby;
+        public List<MediaUser> Users { get => _users; set => _users = value; }
+        public MediaLibrary Library { get => _library; set => _library = value; }
 
-        private List<EmbyUser> _users = new List<EmbyUser>();
+        private List<MediaUser> _users = new List<MediaUser>();
+        private MediaLibrary _library = new MediaLibrary();
+
+        private HttpClient _client = new HttpClient();
 
         public Emby(string urlBase, string apiKey)
         {
             UrlBase = urlBase;
             ApiKey = apiKey;
+            _library.Items = new List<MediaItem>();
+            GetLibrary().Wait();
         }
-        //Get all users from Emby
-        public async Task<List<EmbyUser>?> GetEmbyUsers()
+
+        private async Task GetLibrary()
+        {
+            Console.WriteLine("Getting library from Emby");
+            Console.WriteLine("Creating a temporary user to get the library from Emby");
+            var user = await CreateUser("embyexodustemp7868", "");
+            await UpdateUserWatched(user, _library);
+            Console.WriteLine("Deleting temporary user");
+            await DeleteUser(user);
+        }
+
+        public async Task<List<MediaUser>?> GetUsers()
         {
             if (_users.Count > 0)
             {
                 return _users;
             }
 
+            //print out the url
+            Console.WriteLine($"{UrlBase}Users?api_key={ApiKey}");
+
             string url = $"{UrlBase}Users?api_key={ApiKey}";
-            var response = await new HttpClient().GetAsync(url);
+            var response = await _client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
-            var users = JsonSerializer.Deserialize<List<EmbyUser>>(json);
-            Console.WriteLine($"Got {users.Count} users from Emby");
-            int progress = 0;
-            StringBuilder stringBuilder = new StringBuilder();
-            foreach (var user in users)
+            var users = JsonSerializer.Deserialize<List<MediaUser>>(json);
+            //validate users
+            if (users == null)
             {
-                progress++;
-                await GetEmbyWatched(user);
-                stringBuilder.AppendLine($"User: {user.Name}, ID: {user.Id} ");
-                Console.Write($"\r{progress}/{users.Count} users processed");
+                Console.WriteLine("No users found in Emby");
+                return null;
             }
-            Console.WriteLine();
-            Console.WriteLine(stringBuilder.ToString());
+            Console.WriteLine($"Got {users.Count} users from Emby");
             return users;
         }
 
-        //Get each user's watched status from Emby
-        public async Task GetEmbyWatched(EmbyUser user)
+        public async Task<MediaUser> CreateUser(string user, string password)
+        {
+            var url = $"{UrlBase}Users/New?api_key={ApiKey}&Name={user}&Password={password}";
+            var response = await _client.PostAsync(url, null);
+            var json = await response.Content.ReadAsStringAsync();
+            var newUser = JsonSerializer.Deserialize<MediaUser>(json);
+            if (newUser == null)
+            {
+                Console.WriteLine($"Failed to create user {user} in Emby");
+                return null;
+            }
+            Console.WriteLine($"User {newUser.Name} created in Emby");
+            return newUser;
+        }
+
+        public async Task DeleteUser(MediaUser user)
+        {
+            var url = $"{UrlBase}Users/{user.Id}?api_key={ApiKey}";
+            var response = await _client.DeleteAsync(url);
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"User {user.Name} deleted from Emby");
+            }
+            else
+            {
+                Console.WriteLine($"Failed to delete user {user.Name} from Emby");
+            }
+        }
+
+        public async Task<MediaLibrary> GetWatched(MediaUser user)
         {
             var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=true&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Fields=ProviderIds";
-            var response = await new HttpClient().GetAsync(url);
+            var response = await _client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
-            user.Watched = JsonSerializer.Deserialize<EmbyWatched>(json);
+            var library = JsonSerializer.Deserialize<MediaLibrary>(json);
+            //validate library
+            if (library.Items == null)
+            {
+                Console.WriteLine($"No watched items found for user {user.Name}");
+                library.Items = new List<MediaItem>();
+            }
+            return library;
+        }
+
+
+        public async Task<MediaUser> UpdateUserWatched(MediaUser user, MediaLibrary library)
+        {
+            var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=true&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Fields=ProviderIds";
+            var response = await _client.GetAsync(url);
+            var json = await response.Content.ReadAsStringAsync();
+            var watched = JsonSerializer.Deserialize<MediaLibrary>(json);
+            //validate watched
+            if (watched.Items == null)
+            {
+                Console.WriteLine($"No watched items found for user {user.Name}");
+                watched.Items = new List<MediaItem>();
+            }
+            int progress = 0;
+            foreach (var item in watched.Items)
+            {
+                progress++;
+                if (!_library.Items.Any(x => x.Id == item.Id))
+                {
+                    _library.Items.Add(item);
+                }
+                Console.Write($"Processing Library: {progress}/{watched.Items.Count}\r");
+            }
+            user.Library = watched.Items;
+            return user;
+        }
+
+        public async Task UpdateWatchedStatus(MediaUser user, Dictionary<string, List<MediaSyncItem>> mediaSyncItems)
+        {
+            int progress = 0;
+            foreach (MediaSyncItem media in mediaSyncItems[user.Name])
+            {
+                progress++;
+                if (media.Server1Id != null)
+                {
+                    //call the emby api to update the watched status
+                }
+                else
+                {
+                    Console.WriteLine($"No Emby ID found for {media.Name}");
+                }
+                Console.Write($"Updating items: {progress}/{mediaSyncItems[user.Name].Count}\r");
+            }
         }
     }
-}
-
-public class EmbyUser
-{
-    public string Name { get; set; }
-    public string Id { get; set; }
-
-    public EmbyWatched Watched { get; set; }
-}
-
-public class EmbyWatched
-{
-    public List<EmbyItem> Items { get; set; }
-    public int TotalRecordCount { get; set; }
-}
-public class EmbyItem
-{
-    public string Name { get; set; }
-    public string Id { get; set; }
-    public string Type { get; set; }
-    public Dictionary<string, string> ProviderIds { get; set; }
-
 }
