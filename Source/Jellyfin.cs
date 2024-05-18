@@ -29,11 +29,12 @@ namespace EmbyExodus
         async Task GetLibrary()
         {
             Console.WriteLine("Getting library from Jellyfin");
-            Console.WriteLine("Creating a temporary user to get the library from Jellyfin");
+            //Console.WriteLine("Creating a temporary user to get the library from Jellyfin");
             var user = await CreateUser("embyexodustemp7868", "");
-            await UpdateUserWatched(user, _library);
-            Console.WriteLine("Deleting temporary user");
+            await GetLibrary(user, _library);
+            //Console.WriteLine("Deleting temporary user");
             await DeleteUser(user);
+            Console.WriteLine();
         }
 
         //Get all users from Jellyfin
@@ -49,17 +50,17 @@ namespace EmbyExodus
             var json = await response.Content.ReadAsStringAsync();
             _users = JsonSerializer.Deserialize<List<MediaUser>>(json);
             Console.WriteLine($"Got {_users.Count} users from Jellyfin");
-            StringBuilder stringBuilder = new StringBuilder();
-            int progress = 0;
-            foreach (var user in _users)
-            {
-                progress++;
-                //await GetJellyfinWatched(user);
-                stringBuilder.AppendLine($"User: {user.Name}, ID: {user.Id} ");
-                Console.Write($"\r{progress}/{_users.Count} users processed");
-            }
-            Console.WriteLine();
-            Console.WriteLine(stringBuilder.ToString());
+            //StringBuilder stringBuilder = new StringBuilder();
+            //int progress = 0;
+            //foreach (var user in _users)
+            //{
+            //    progress++;
+            //    //await GetJellyfinWatched(user);
+            //    stringBuilder.AppendLine($"User: {user.Name}, ID: {user.Id} ");
+            //    Console.Write($"\r{progress}/{_users.Count} users processed");
+            //}
+            //Console.WriteLine();
+            //Console.WriteLine(stringBuilder.ToString());
 
             return _users;
         }
@@ -83,13 +84,13 @@ namespace EmbyExodus
             var json = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"Failed to create user: {json}");
+                //Console.WriteLine($"Failed to create user: {json}");
                 throw new Exception($"Failed to create user: {json}");
             }
             else
             {
                 var createdUser = JsonSerializer.Deserialize<MediaUser>(json);
-                Console.WriteLine($"Created user: {createdUser.Name}, ID: {createdUser.Id}");
+               // Console.WriteLine($"Created user: {createdUser.Name}, ID: {createdUser.Id}");
                 //add the user to the list of users
                 _users.Add(createdUser);
                 return createdUser;
@@ -105,41 +106,25 @@ namespace EmbyExodus
             if (!response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Failed to delete user: {json}");
+               // Console.WriteLine($"Failed to delete user: {json}");
                 throw new Exception($"Failed to delete user: {json}");
             }
             else
             {
-                Console.WriteLine($"Deleted user: {user.Name}");
+                //Console.WriteLine($"Deleted user: {user.Name}");
                 _users.Remove(user);
             }
         }
 
-        public async Task<MediaUser> UpdateUserWatched(MediaUser user, MediaLibrary _library)
+        private async Task GetLibrary(MediaUser user, MediaLibrary _library)
         {
             var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=True&Fields=ProviderIds&IncludeItemTypes=Episode,Movie";
             var response = await _client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
             var _lib = JsonSerializer.Deserialize<MediaLibrary>(json);
+            _library.Items = _lib.Items;
 
-            int progress = 0;
-            //add all items to the library if they don't already exist
-            int itemsAdded = 0;
-            foreach (var item in _lib.Items)
-            {
-                progress++;
-                Console.Write($"Processing library {progress}/{_lib.Items.Count}\r");
-                if (!_library.Items.Any(x => x.Id == item.Id))
-                {
-                    _library.Items.Add(item);
-                    itemsAdded++;
-                }
-            }
-            Console.WriteLine($"Added {itemsAdded} items to the library");
-            Console.WriteLine($"Library updated with {_library.Items.Count} items");
-
-            user.Library = _library.Items;
-            return user;
+            Console.WriteLine($"Jellyfin Library contains {_library.Items.Count} items");
         }
 
         public async Task UpdateWatchedStatus(MediaUser user, Dictionary<string, List<MediaSyncItem>> mediaSyncItems)
@@ -149,13 +134,13 @@ namespace EmbyExodus
             foreach (MediaSyncItem media in mediaSyncItems[user.Name])
             {
                 progress++;
-                if (media.Server2Id != null)
+                if (media.DestinationID != null)
                 {
-                    string apiUrl = $"{UrlBase}Users/{user.Id}/PlayedItems/{media.Server2Id}?api_key={ApiKey}";
+                    string apiUrl = $"{UrlBase}Users/{user.Id}/PlayedItems/{media.DestinationID}?api_key={ApiKey}";
                     HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
                     request.Headers.Add("accept", "application/json");
                     request.Headers.Add("api_key", ApiKey);
-                    request.Content = new StringContent(JsonSerializer.Serialize(new { Name = media.Name, Id = media.Server2Id, Played = 1 }), Encoding.UTF8, "application/json");
+                    request.Content = new StringContent(JsonSerializer.Serialize(new { Name = media.Name, Id = media.DestinationID, Played = 1 }), Encoding.UTF8, "application/json");
 
                     HttpResponseMessage response = await _client.SendAsync(request);
                     response.EnsureSuccessStatusCode();

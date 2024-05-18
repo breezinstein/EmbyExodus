@@ -1,52 +1,52 @@
 
+using EmbyExodus;
 using EmbyExodus.Interfaces;
 
 namespace EmbyExodus
 {
     public class MigrateUsers
     {
-        private IMediaServer server1;
-        private IMediaServer server2;
+        private IMediaServer sourceServer;
+        private IMediaServer destinationServer;
 
         public MigrateUsers(IMediaServer server1, IMediaServer server2)
         {
-            this.server1 = server1;
-            this.server2 = server2;
+            this.sourceServer = server1;
+            this.destinationServer = server2;
         }
 
         public void Migrate()
         {
-            var users1 = server1.GetUsers().Result;
-            //print out users
-            Console.WriteLine("Users on server 1:");
-            foreach (var user in users1)
+            Console.WriteLine();
+            Console.WriteLine("===== Migrate Users =====");
+            var sourceUsers = sourceServer.GetUsers().Result;
+            var destinationUsers = destinationServer.GetUsers().Result;
+
+            //creating a list of users in the source server that are not in the destination server
+            var usersToAdd = sourceUsers.Where(x => !destinationUsers.Any(y => y.Name == x.Name)).ToList();
+
+            //print out a numbered list of users to add
+            Console.WriteLine("Users to add:");
+            for (int i = 0; i < usersToAdd.Count; i++)
             {
-                Console.WriteLine(user.Name);
+                Console.WriteLine($"{i + 1}. {usersToAdd[i].Name}");
             }
 
-            var users2 = server2.GetUsers().Result;
-
-            //check if any users are missing from Jellyfin
-            foreach (var user in users1)
+            Console.WriteLine("Enter the number of the user you would like to add");
+            var userNumber = Console.ReadLine();
+            if (!int.TryParse(userNumber, out int userIndex) || userIndex < 1 || userIndex > usersToAdd.Count)
             {
-                if (users2.Any(x => x.Name == user.Name))
-                {
-                    Console.WriteLine($"{user.Name} already exists on server 2, skipping...");
-                    continue;
-                }
-                // ask to create user
-                Console.WriteLine($"User {user.Name} not found in server 2, add {user.Name}?");
-                Console.WriteLine($"Press Y to add {user.Name}, any other key to skip");
-                var key = Console.ReadKey();
-                Console.WriteLine();
-                if (key.Key != ConsoleKey.Y)
-                {
-                    continue;
-                }
-                string? password = "";
+                Console.WriteLine("Invalid user number, exiting...");
+                return;
+            }
+            else
+            {
+                var user = usersToAdd[userIndex - 1];
+                Console.WriteLine($"Adding user {user.Name}");
+                //ask for password
                 Console.WriteLine($"Enter password for {user.Name}: ");
-                password = Console.ReadLine();
-                server2.CreateUser(user.Name, password).Wait();
+                var password = Console.ReadLine();
+                destinationServer.CreateUser(user.Name, password).Wait();
             }
         }
 
@@ -57,7 +57,7 @@ namespace EmbyExodus
             Console.WriteLine("1. Server 1");
             Console.WriteLine("2. Server 2");
             var serverNumber = int.Parse(Console.ReadLine());
-            var server = serverNumber == 1 ? server1 : server2;
+            var server = serverNumber == 1 ? sourceServer : destinationServer;
 
             //list out users with numbers
             var users1 = server.GetUsers().Result;

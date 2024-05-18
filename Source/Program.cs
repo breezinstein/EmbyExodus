@@ -37,11 +37,11 @@ internal class Program
 
     private static async Task ShowMenu(IMediaServer server1, IMediaServer server2)
     {
-        Console.WriteLine($"Server 1:{server1.ServerType} => Server 2:{server2.ServerType}");
+        Console.WriteLine($"===== Server 1:{server1.ServerType} => Server 2:{server2.ServerType} =====");
         Console.WriteLine("What would you like to do?");
         Console.WriteLine("1. Migrate Users: Migrate users from one server to another");
         Console.WriteLine("2. Migrate Watched Status: Migrate watched status from one server to another");
-        Console.WriteLine("3. Sync Watched Status: Sync watched status between servers");
+        Console.WriteLine("3. (Coming soon) Sync Watched Status: Sync watched status between servers");
         Console.WriteLine("4. Exit");
         Console.WriteLine("Enter the number of the action you would like to perform");
         var action = Console.ReadLine();
@@ -80,7 +80,9 @@ internal class Program
 
     private static async Task SyncWatchedStatus()
     {
-        syncWatchedStatus.Sync();
+        Console.WriteLine("Function not supported yet.");
+
+        //syncWatchedStatus.Sync();
     }
 
     private static async Task DeleteUsers()
@@ -106,13 +108,4 @@ internal class Program
         }
         return null;
     }
-}
-
-public class MediaSyncItem
-{
-    public string Type { get; set; }
-    public string Server1Id { get; set; }
-    public string? Server2Id { get; set; }
-    public string Name { get; set; }
-    public Dictionary<string, string> ProviderIds { get; set; }
 }

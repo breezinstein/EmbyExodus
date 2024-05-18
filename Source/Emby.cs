@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using EmbyExodus.Interfaces;
+
 namespace EmbyExodus
 {
     public class Emby : IMediaServer
@@ -27,11 +28,12 @@ namespace EmbyExodus
         private async Task GetLibrary()
         {
             Console.WriteLine("Getting library from Emby");
-            Console.WriteLine("Creating a temporary user to get the library from Emby");
+            //Console.WriteLine("Creating a temporary user to get the library from Emby");
             var user = await CreateUser("embyexodustemp7868", "");
-            await UpdateUserWatched(user, _library);
-            Console.WriteLine("Deleting temporary user");
+            await GetLibrary(user, _library);
+            //Console.WriteLine("Deleting temporary user");
             await DeleteUser(user);
+            Console.WriteLine();
         }
 
         public async Task<List<MediaUser>?> GetUsers()
@@ -40,9 +42,6 @@ namespace EmbyExodus
             {
                 return _users;
             }
-
-            //print out the url
-            Console.WriteLine($"{UrlBase}Users?api_key={ApiKey}");
 
             string url = $"{UrlBase}Users?api_key={ApiKey}";
             var response = await _client.GetAsync(url);
@@ -69,7 +68,7 @@ namespace EmbyExodus
                 Console.WriteLine($"Failed to create user {user} in Emby");
                 return null;
             }
-            Console.WriteLine($"User {newUser.Name} created in Emby");
+            //Console.WriteLine($"User {newUser.Name} created in Emby");
             return newUser;
         }
 
@@ -79,11 +78,11 @@ namespace EmbyExodus
             var response = await _client.DeleteAsync(url);
             if (response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"User {user.Name} deleted from Emby");
+                //Console.WriteLine($"User {user.Name} deleted from Emby");
             }
             else
             {
-                Console.WriteLine($"Failed to delete user {user.Name} from Emby");
+                //Console.WriteLine($"Failed to delete user {user.Name} from Emby");
             }
         }
 
@@ -103,30 +102,15 @@ namespace EmbyExodus
         }
 
 
-        public async Task<MediaUser> UpdateUserWatched(MediaUser user, MediaLibrary library)
+        public async Task GetLibrary(MediaUser user, MediaLibrary library)
         {
-            var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=true&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Fields=ProviderIds";
+            var url = $"{UrlBase}Users/{user.Id}/Items?api_key={ApiKey}&Recursive=true&IncludeItemTypes=Movie,Episode&Fields=ProviderIds";
             var response = await _client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
-            var watched = JsonSerializer.Deserialize<MediaLibrary>(json);
-            //validate watched
-            if (watched.Items == null)
-            {
-                Console.WriteLine($"No watched items found for user {user.Name}");
-                watched.Items = new List<MediaItem>();
-            }
-            int progress = 0;
-            foreach (var item in watched.Items)
-            {
-                progress++;
-                if (!_library.Items.Any(x => x.Id == item.Id))
-                {
-                    _library.Items.Add(item);
-                }
-                Console.Write($"Processing Library: {progress}/{watched.Items.Count}\r");
-            }
-            user.Library = watched.Items;
-            return user;
+            var lib = JsonSerializer.Deserialize<MediaLibrary>(json);
+            library.Items = lib.Items;
+            Console.WriteLine($"Emby Library contains {library.Items.Count} items");
+            
         }
 
         public async Task UpdateWatchedStatus(MediaUser user, Dictionary<string, List<MediaSyncItem>> mediaSyncItems)
@@ -135,9 +119,16 @@ namespace EmbyExodus
             foreach (MediaSyncItem media in mediaSyncItems[user.Name])
             {
                 progress++;
-                if (media.Server1Id != null)
+                if (media.DestinationID != null)
                 {
                     //call the emby api to update the watched status
+                    var url = $"{UrlBase}Users/{user.Id}/PlayedItems/{media.DestinationID}?api_key={ApiKey}";
+                    HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, url);
+                    request.Headers.Add("accept", "application/json");
+                    request.Headers.Add("api_key", ApiKey);
+                    request.Content = new StringContent(JsonSerializer.Serialize(new { Name = media.Name, Id = media.DestinationID, Played = 1 }), Encoding.UTF8, "application/json");
+                    var response = await _client.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
                 }
                 else
                 {

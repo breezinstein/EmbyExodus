@@ -1,4 +1,4 @@
-namespace EmbyExodus.Interfaces
+namespace EmbyExodus
 {
     public class MediaLibrary
     {
