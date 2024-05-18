@@ -19,7 +19,7 @@ Download the latest release and extract the archive.
 3. Run EmbyExodus.exe
 4. Follow the prompts.
 
-![example](Docs\Images\image.png)
+![example](.\Docs\Images\image.png)
 
 ## Contributing
 
