@@ -22,7 +22,6 @@ namespace EmbyExodus
             UrlBase = urlBase;
             ApiKey = apiKey;
             _library.Items = new List<MediaItem>();
-            _client.DefaultRequestHeaders.Add("Authorization", ApiKey);
             GetLibrary().Wait();
         }
 
@@ -79,7 +78,8 @@ namespace EmbyExodus
         {
 
             var url = $"{UrlBase}Users/New?api_key={ApiKey}";
-            var content = new StringContent($"{{\"Name\":\"{user}\",\"Password\":\"{password}\"}}", Encoding.UTF8, "application/json");
+            var jsonBody = JsonSerializer.Serialize(new { Name = user, Password = password });
+            var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
             var response = await _client.PostAsync(url, content);
             var json = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
@@ -139,7 +139,6 @@ namespace EmbyExodus
                     string apiUrl = $"{UrlBase}Users/{user.Id}/PlayedItems/{media.DestinationID}?api_key={ApiKey}";
                     HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
                     request.Headers.Add("accept", "application/json");
-                    request.Headers.Add("api_key", ApiKey);
                     request.Content = new StringContent(JsonSerializer.Serialize(new { Name = media.Name, Id = media.DestinationID, Played = 1 }), Encoding.UTF8, "application/json");
 
                     HttpResponseMessage response = await _client.SendAsync(request);
